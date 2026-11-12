@@ -1,0 +1,60 @@
+name: OpenSooq Rental Hunter
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "debug"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: opensooq-bot
+  cancel-in-progress: false
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run bot
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.OPENSOOQ_WEBHOOK_URL }}
+          CITY_FILTER: "مسقط"
+          MAX_PAGES: "3"
+          EXCLUDE_DAILY: "1"
+          OWNERS_ONLY: "1"
+        run: python opensooq_bot.py ${{ inputs.debug && '--debug' || '' }}
+
+      - name: Upload debug files
+        if: ${{ inputs.debug }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: opensooq-debug
+          path: debug_*
+
+      - name: Save seen.json
+        run: |
+          git config user.name "opensooq-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add seen.json
+          git diff --cached --quiet && exit 0
+          git commit -m "opensooq: update seen"
+          for i in 1 2 3; do
+            git pull --rebase -X theirs && git push && exit 0
+            sleep 5
+          done
